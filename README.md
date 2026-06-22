@@ -1,35 +1,157 @@
 # HlnIce
 
-TODO: Delete this and the text below, and describe your gem
+A Ruby client for the [HLN ICE](https://www.hln.com/ice/) (Immunization Calculation Engine), an OpenCDS clinical decision-support service for immunization forecasting.
 
-Welcome to your new gem! In this directory, you'll find the files you need to be able to package up your Ruby library into a gem. Put your Ruby code in the file `lib/hln_ice`. To experiment with that code, run `bin/console` for an interactive prompt.
+Given a patient's demographics and immunization history, `HlnIce` builds the
+VMR (Virtual Medical Record) request, calls the ICE evaluation endpoint, and
+parses the response into:
+
+- a full list of **recommendations** (one per vaccine group, with status, reasons, and administration intervals), and
+- a **simplified status** map keyed by vaccine group — e.g. `{ ipv_opv: "overdue", mmr: "compliant" }`.
+
+The gem has no Rails or ActiveSupport dependency; it takes an injected logger
+so it can run in any Ruby application.
 
 ## Installation
 
-TODO: Replace `UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG` with your gem name right after releasing it to RubyGems.org. Please do not do it earlier due to security reasons. Alternatively, replace this section with instructions to install your gem from git if you don't plan to release to RubyGems.org.
+This gem is hosted in a private repository, so install it directly from git.
+Add this to your application's `Gemfile`:
 
-Install the gem and add to the application's Gemfile by executing:
+```ruby
+gem "hln_ice", git: "https://github.com/PrimaryDotHealth/hln_ice.git"
+```
 
-    $ bundle add UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+To pin to a specific version, tag, or branch:
 
-If bundler is not being used to manage dependencies, install the gem by executing:
+```ruby
+gem "hln_ice", git: "https://github.com/PrimaryDotHealth/hln_ice.git", tag: "v0.1.0"
+```
 
-    $ gem install UPDATE_WITH_YOUR_GEM_NAME_IMMEDIATELY_AFTER_RELEASE_TO_RUBYGEMS_ORG
+Then run:
+
+```sh
+bundle install
+```
 
 ## Usage
 
-TODO: Write usage instructions here
+### Creating a client
+
+```ruby
+client = HlnIce::Client.new(base_url: "https://ice.example.com")
+```
+
+All options:
+
+| Option        | Default                  | Description                                           |
+| ------------- | ------------------------ | ----------------------------------------------------- |
+| `base_url:`   | _(required)_             | Base URL of the ICE OpenCDS service.                  |
+| `timeout:`    | `30`                     | HTTP request timeout, in seconds.                     |
+| `max_retries:`| `3`                      | Number of retries on a failed evaluation request.     |
+| `retry_delay:`| `1`                      | Seconds to wait between retries.                      |
+| `logger:`     | `Logger.new($stdout)`    | Any `Logger`-compatible object. In Rails, pass `Rails.logger`. |
+
+```ruby
+# In a Rails app, reuse the application logger:
+client = HlnIce::Client.new(base_url: ENV["ICE_URL"], logger: Rails.logger)
+```
+
+### Checking availability
+
+```ruby
+client.available? # => true / false
+```
+
+### Evaluating immunizations
+
+Pass a patient hash with their demographics and (optionally) prior
+immunization events:
+
+```ruby
+patient_data = {
+  patient: {
+    id: "12345",
+    date_of_birth: "2020-01-01", # parseable date string
+    gender: "M"                  # "M", "F", or blank (defaults to "U")
+  },
+  immunizations: [
+    {
+      clinicalStatements: {
+        substanceAdministrationEvents: [
+          {
+            substance: {
+              substanceCode: { code: "10", displayName: "Polio" }
+            },
+            administrationTimeInterval: { low: "2020-03-01", high: "2020-03-01" }
+          }
+        ]
+      }
+    }
+  ]
+}
+
+result = client.evaluate_immunizations(patient_data)
+```
+
+### The result
+
+On success:
+
+```ruby
+{
+  success: true,
+  data: {
+    raw_xml: "<...the decoded ICE response XML...>",
+    patient: { id: "12345", birth_date: "2020-01-01", gender: "M" },
+    recommendations: [
+      {
+        vaccine: { code: "10", code_system: "...", name: "Polio Vaccine Group" },
+        status:  { code: "RECOMMENDED", name: "Recommended" },
+        reasons: [{ code: "DUE_NOW", name: "Due Now" }],
+        intervals: { proposed: { low: "2020-03-01", high: "2020-04-01" } }
+      }
+    ],
+    simplified_status: { ipv_opv: "overdue" }
+  }
+}
+```
+
+On failure (service error, timeout after retries, or unparseable response):
+
+```ruby
+{ success: false, error: "ICE service error: 400 - ..." }
+```
+
+Always branch on `result[:success]` before reading `result[:data]`.
+
+### Simplified status values
+
+`simplified_status` maps each recognized vaccine group to one of:
+
+| Value              | Meaning                                                     |
+| ------------------ | ----------------------------------------------------------- |
+| `"compliant"`      | Up to date (ICE `FUTURE_RECOMMENDED` / `NOT_RECOMMENDED`).  |
+| `"overdue"`        | A dose is recommended now (ICE `RECOMMENDED`).              |
+| `"conditional"`    | Conditionally recommended (ICE `CONDITIONAL`).             |
+| `"medically_exempt"` | Conditional status with a medical-exemption reason.       |
+
+The recognized vaccine-group keys are: `:dtap_tdap`, `:hep_a`, `:hep_b`,
+`:hib`, `:hpv`, `:mcv4`, `:mmr`, `:pcv`, `:ipv_opv`, and `:var`.
 
 ## Development
 
-After checking out the repo, run `bin/setup` to install dependencies. Then, run `rake spec` to run the tests. You can also run `bin/console` for an interactive prompt that will allow you to experiment.
+After checking out the repo, run `bin/setup` to install dependencies. Then,
+run `rake spec` to run the tests. You can also run `bin/console` for an
+interactive prompt that will allow you to experiment.
 
-To install this gem onto your local machine, run `bundle exec rake install`. To release a new version, update the version number in `version.rb`, and then run `bundle exec rake release`, which will create a git tag for the version, push git commits and the created tag, and push the `.gem` file to [rubygems.org](https://rubygems.org).
+To install this gem onto your local machine, run `bundle exec rake install`.
 
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/[USERNAME]/hln_ice.
+Bug reports and pull requests are welcome on GitHub at
+https://github.com/PrimaryDotHealth/hln_ice.
 
 ## License
 
-The gem is available as open source under the terms of the [MIT License](https://opensource.org/licenses/MIT).
+The gem is available as open source under the terms of the
+[MIT License](https://opensource.org/licenses/MIT).
