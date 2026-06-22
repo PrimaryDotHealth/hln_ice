@@ -6,7 +6,7 @@ Gem::Specification.new do |spec|
   spec.name = "hln_ice"
   spec.version = HlnIce::VERSION
   spec.authors = ["Sam Sohn"]
-  spec.email = ["sam.sohn28@gmail.com"]
+  spec.email = ["sam@primary.health"]
 
   spec.summary = "Ruby client for the HLN ICE (Immunization Calculation Engine) OpenCDS service."
   spec.description = "Evaluates a patient's immunization history against the HLN ICE forecasting " \
