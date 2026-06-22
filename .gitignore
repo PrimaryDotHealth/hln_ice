@@ -1,0 +1,14 @@
+/.bundle/
+/.yardoc
+/_yardoc/
+/coverage/
+/doc/
+/pkg/
+/spec/reports/
+/tmp/
+
+# A gem is a library, so its lockfile is not committed
+/Gemfile.lock
+
+# rspec failure tracking
+.rspec_status

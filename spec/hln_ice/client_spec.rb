@@ -1,0 +1,137 @@
+# frozen_string_literal: true
+
+require "base64"
+
+RSpec.describe HlnIce::Client do
+  let(:base_url) { "https://ice.example.com" }
+  let(:logger)   { Logger.new(IO::NULL) }
+  let(:client)   { described_class.new(base_url: base_url, logger: logger, retry_delay: 0) }
+
+  # A minimal VMR XML response with one Polio proposal marked RECOMMENDED.
+  let(:vmr_xml) do
+    <<~XML
+      <?xml version="1.0" encoding="UTF-8"?>
+      <cdsOutput>
+        <vmrOutput>
+          <patient>
+            <id extension="12345"/>
+            <demographics>
+              <birthTime value="20200101"/>
+              <gender code="M"/>
+            </demographics>
+            <clinicalStatements>
+              <substanceAdministrationProposals>
+                <substanceAdministrationProposal>
+                  <substance>
+                    <substanceCode code="10"
+                                   codeSystem="2.16.840.1.113883.12.292"
+                                   displayName="Polio Vaccine Group"/>
+                  </substance>
+                  <proposedAdministrationTimeInterval low="20200301" high="20200401"/>
+                  <relatedClinicalStatement>
+                    <observationResult>
+                      <observationValue>
+                        <concept code="RECOMMENDED" displayName="Recommended"/>
+                      </observationValue>
+                      <interpretation code="DUE_NOW" displayName="Due Now"/>
+                    </observationResult>
+                  </relatedClinicalStatement>
+                </substanceAdministrationProposal>
+              </substanceAdministrationProposals>
+            </clinicalStatements>
+          </patient>
+        </vmrOutput>
+      </cdsOutput>
+    XML
+  end
+
+  let(:success_body) do
+    {
+      "finalKMEvaluationResponse" => [
+        {
+          "kmEvaluationResultData" => [
+            { "data" => { "base64EncodedPayload" => [Base64.strict_encode64(vmr_xml)] } }
+          ]
+        }
+      ]
+    }.to_json
+  end
+
+  let(:patient_data) do
+    {
+      patient: { id: "12345", date_of_birth: "2020-01-01", gender: "M" },
+      immunizations: []
+    }
+  end
+
+  def stub_response(success:, body: "", code: 200)
+    instance_double(HTTParty::Response, success?: success, body: body, code: code)
+  end
+
+  describe "#available?" do
+    it "returns true when the service responds successfully" do
+      allow(HTTParty).to receive(:get).and_return(stub_response(success: true))
+      expect(client.available?).to be(true)
+    end
+
+    it "returns false when the service responds unsuccessfully" do
+      allow(HTTParty).to receive(:get).and_return(stub_response(success: false))
+      expect(client.available?).to be(false)
+    end
+
+    it "returns false when the request raises" do
+      allow(HTTParty).to receive(:get).and_raise(SocketError.new("boom"))
+      expect(client.available?).to be(false)
+    end
+  end
+
+  describe "#evaluate_immunizations" do
+    it "parses a successful response into recommendations and a simplified status" do
+      allow(HTTParty).to receive(:post).and_return(stub_response(success: true, body: success_body))
+
+      result = client.evaluate_immunizations(patient_data)
+
+      expect(result[:success]).to be(true)
+      expect(result[:data][:simplified_status]).to eq(ipv_opv: "overdue")
+      expect(result[:data][:recommendations].first[:vaccine][:name]).to eq("Polio Vaccine Group")
+    end
+
+    it "defaults a blank gender to 'U' in the request payload" do
+      blank_gender = patient_data.merge(patient: patient_data[:patient].merge(gender: ""))
+      allow(HTTParty).to receive(:post).and_return(stub_response(success: true, body: success_body))
+
+      client.evaluate_immunizations(blank_gender)
+
+      expect(HTTParty).to have_received(:post) do |_url, options|
+        payload = options[:body]
+        decoded = Base64.decode64(JSON.parse(payload).dig(
+          "evaluationRequest", "dataRequirementItemData", 0, "data", "base64EncodedPayload", 0
+        ))
+        expect(decoded).to include('code="U"')
+      end
+    end
+
+    it "returns a failure hash on an error response" do
+      allow(HTTParty).to receive(:post).and_return(
+        stub_response(success: false, body: { message: "bad request" }.to_json, code: 400)
+      )
+
+      result = client.evaluate_immunizations(patient_data)
+
+      expect(result[:success]).to be(false)
+      expect(result[:error]).to include("400")
+    end
+
+    it "retries then fails after exhausting max_retries" do
+      retry_client = described_class.new(
+        base_url: base_url, logger: logger, max_retries: 2, retry_delay: 0
+      )
+      allow(HTTParty).to receive(:post).and_raise(Timeout::Error.new("slow"))
+
+      result = retry_client.evaluate_immunizations(patient_data)
+
+      expect(result[:success]).to be(false)
+      expect(HTTParty).to have_received(:post).exactly(3).times # initial + 2 retries
+    end
+  end
+end
