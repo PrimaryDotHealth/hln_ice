@@ -14,23 +14,22 @@ so it can run in any Ruby application.
 
 ## Installation
 
-This gem is hosted in a private repository, so install it directly from git.
-Add this to your application's `Gemfile`:
+Add the gem to your application's `Gemfile`:
 
 ```ruby
-gem "hln_ice", git: "https://github.com/PrimaryDotHealth/hln_ice.git"
-```
-
-To pin to a specific version, tag, or branch:
-
-```ruby
-gem "hln_ice", git: "https://github.com/PrimaryDotHealth/hln_ice.git", tag: "v0.1.0"
+gem "hln_ice"
 ```
 
 Then run:
 
 ```sh
 bundle install
+```
+
+Or install it directly:
+
+```sh
+gem install hln_ice
 ```
 
 ## Usage
