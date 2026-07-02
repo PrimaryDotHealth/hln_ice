@@ -37,14 +37,18 @@ module HlnIce
       "Varicella Vaccine Group" => :var,
     }.freeze
 
-    attr_reader :base_url, :timeout, :max_retries, :retry_delay, :logger
+    attr_reader :base_url, :timeout, :max_retries, :retry_delay, :logger, :log_payloads
 
-    def initialize(base_url:, timeout: 30, max_retries: 3, retry_delay: 1, logger: nil)
+    # log_payloads: when false (default), the ICE input data, generated request
+    # XML, and raw service response are NOT logged. These contain patient PHI, so
+    # logging stays off unless a caller explicitly opts in (e.g. local debugging).
+    def initialize(base_url:, timeout: 30, max_retries: 3, retry_delay: 1, logger: nil, log_payloads: false)
       @base_url = base_url
       @timeout = timeout
       @max_retries = max_retries
       @retry_delay = retry_delay
       @logger = logger || Logger.new($stdout)
+      @log_payloads = log_payloads
     end
 
     # Check if the ICE service is available
@@ -127,7 +131,7 @@ module HlnIce
         gender = "U" if blank?(gender) # Set default to 'U' if blank
 
         # Log input data for debugging
-        logger.debug("ICE Input Data: #{JSON.pretty_generate(patient_data)}")
+        logger.debug("ICE Input Data: #{JSON.pretty_generate(patient_data)}") if log_payloads
 
         # Build the VMR XML
         xml_payload = <<~XML
@@ -196,7 +200,7 @@ module HlnIce
         XML
 
         # Log the generated XML for debugging
-        logger.debug("Generated ICE XML: #{xml_payload}")
+        logger.debug("Generated ICE XML: #{xml_payload}") if log_payloads
 
         # Base64 encode the XML
         base64_encoded_payload = Base64.strict_encode64(xml_payload)
@@ -245,7 +249,7 @@ module HlnIce
       end
 
       def parse_ice_response(response_body)
-        logger.info("ICE service response: #{response_body}")
+        logger.debug("ICE service response: #{response_body}") if log_payloads
 
         result = JSON.parse(response_body)
 

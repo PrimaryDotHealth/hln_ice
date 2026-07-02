@@ -134,4 +134,38 @@ RSpec.describe HlnIce::Client do
       expect(HTTParty).to have_received(:post).exactly(3).times # initial + 2 retries
     end
   end
+
+  describe "PHI payload logging" do
+    let(:spy_logger) { instance_spy(Logger) }
+
+    before do
+      allow(HTTParty).to receive(:post).and_return(stub_response(success: true, body: success_body))
+    end
+
+    context "by default" do
+      let(:client) { described_class.new(base_url: base_url, logger: spy_logger, retry_delay: 0) }
+
+      it "does not log the input data, generated XML, or service response" do
+        client.evaluate_immunizations(patient_data)
+
+        expect(spy_logger).not_to have_received(:debug).with(/ICE Input Data/)
+        expect(spy_logger).not_to have_received(:debug).with(/Generated ICE XML/)
+        expect(spy_logger).not_to have_received(:debug).with(/ICE service response/)
+      end
+    end
+
+    context "when log_payloads is enabled" do
+      let(:client) do
+        described_class.new(base_url: base_url, logger: spy_logger, retry_delay: 0, log_payloads: true)
+      end
+
+      it "logs the input data, generated XML, and service response for debugging" do
+        client.evaluate_immunizations(patient_data)
+
+        expect(spy_logger).to have_received(:debug).with(/ICE Input Data/)
+        expect(spy_logger).to have_received(:debug).with(/Generated ICE XML/)
+        expect(spy_logger).to have_received(:debug).with(/ICE service response/)
+      end
+    end
+  end
 end
