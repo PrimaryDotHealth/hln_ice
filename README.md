@@ -49,6 +49,7 @@ All options:
 | `max_retries:`| `3`                      | Number of retries on a failed evaluation request.     |
 | `retry_delay:`| `1`                      | Seconds to wait between retries.                      |
 | `logger:`     | `Logger.new($stdout)`    | Any `Logger`-compatible object. In Rails, pass `Rails.logger`. |
+| `log_payloads:`| `false`                 | When `true`, logs the ICE input data, generated request XML, and raw service response. These contain patient PHI, so keep this off outside local debugging. |
 
 ```ruby
 # In a Rails app, reuse the application logger:
