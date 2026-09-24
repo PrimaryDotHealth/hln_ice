@@ -306,13 +306,14 @@ module HlnIce
           vaccine_name        = substance_element["displayName"]
           vaccine_code_system = substance_element["codeSystem"]
 
-          # Get the clinical observation result
-          observation = proposal.xpath(".//observationResult").first
+          # Get the clinical observation result carrying the recommendation status.
+          # A proposal may contain other observation results (e.g. schedule
+          # authorities), in any order, so select the one with a status concept.
+          observation = proposal.xpath(".//observationResult[observationValue/concept]").first
           next unless observation
 
           # Get recommendation status
           status_element = observation.xpath(".//observationValue/concept").first
-          next unless status_element
 
           status_code = status_element["code"]
           status_name = status_element["displayName"]
@@ -369,6 +370,11 @@ module HlnIce
           # Only add intervals if they exist
           recommendation[:intervals] = intervals if present?(intervals)
 
+          # Only add schedule authorities if the service returned them
+          # (requires the ICE outputScheduleAuthorities property)
+          schedule_authorities = parse_schedule_authorities(proposal)
+          recommendation[:schedule_authorities] = schedule_authorities if present?(schedule_authorities)
+
           all_recommendations << recommendation
         end
 
@@ -411,6 +417,21 @@ module HlnIce
           recommendations: all_recommendations, # Keep the original flat list for backward compatibility
           simplified_status: # Add the simplified mapping
         }
+      end
+
+      # Extract the schedule authorities (e.g. ACIP_CDC, AAP) for a proposal.
+      # Returns an empty array when the service did not include them.
+      def parse_schedule_authorities(proposal)
+        authorities = proposal.xpath(
+          ".//observationResult[observationFocus/@code='ICE_VACCINE_GROUP_SCHEDULE_AUTHORITIES']/interpretation"
+        )
+
+        authorities.map do |interpretation|
+          {
+            code: interpretation["code"],
+            name: interpretation["displayName"]
+          }
+        end
       end
 
       def handle_error_response(response)
