@@ -108,7 +108,12 @@ On success:
         vaccine: { code: "10", code_system: "...", name: "Polio Vaccine Group" },
         status:  { code: "RECOMMENDED", name: "Recommended" },
         reasons: [{ code: "DUE_NOW", name: "Due Now" }],
-        intervals: { proposed: { low: "2020-03-01", high: "2020-04-01" } }
+        intervals: { proposed: { low: "2020-03-01", high: "2020-04-01" } },
+        # Only present when the ICE server has outputScheduleAuthorities enabled
+        schedule_authorities: [
+          { code: "ACIP_CDC", name: "Advisory Committee on Immunization Practices / Centers for Disease Control and Prevention" },
+          { code: "AAP", name: "American Academy of Pediatrics" }
+        ]
       }
     ],
     simplified_status: { ipv_opv: "overdue" }

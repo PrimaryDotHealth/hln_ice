@@ -96,6 +96,91 @@ RSpec.describe HlnIce::Client do
       expect(result[:data][:recommendations].first[:vaccine][:name]).to eq("Polio Vaccine Group")
     end
 
+    it "omits schedule_authorities when the service does not return them" do
+      allow(HTTParty).to receive(:post).and_return(stub_response(success: true, body: success_body))
+
+      result = client.evaluate_immunizations(patient_data)
+
+      expect(result[:data][:recommendations].first).not_to have_key(:schedule_authorities)
+    end
+
+    context "when the service returns schedule authorities" do
+      # Mirrors ICE output with outputScheduleAuthorities enabled, where the
+      # authorities observation can precede the status observation.
+      let(:vmr_xml) do
+        <<~XML
+          <?xml version="1.0" encoding="UTF-8"?>
+          <cdsOutput>
+            <vmrOutput>
+              <patient>
+                <id extension="12345"/>
+                <clinicalStatements>
+                  <substanceAdministrationProposals>
+                    <substanceAdministrationProposal>
+                      <substance>
+                        <substanceCode code="400"
+                                       codeSystem="2.16.840.1.113883.3.795.12.100.1"
+                                       displayName="Polio Vaccine Group"/>
+                      </substance>
+                      <relatedClinicalStatement>
+                        <observationResult>
+                          <observationFocus code="ICE_VACCINE_GROUP_SCHEDULE_AUTHORITIES"
+                                            codeSystem="2.16.840.1.113883.3.795.12.100.500"/>
+                          <interpretation code="ACIP_CDC" codeSystem="2.16.840.1.113883.3.795.12.100.12"
+                                          displayName="Advisory Committee on Immunization Practices / Centers for Disease Control and Prevention"/>
+                          <interpretation code="AAP" codeSystem="2.16.840.1.113883.3.795.12.100.12"
+                                          displayName="American Academy of Pediatrics"/>
+                          <interpretation code="AAFP" codeSystem="2.16.840.1.113883.3.795.12.100.12"
+                                          displayName="American Academy of Family Physicians"/>
+                        </observationResult>
+                      </relatedClinicalStatement>
+                      <relatedClinicalStatement>
+                        <observationResult>
+                          <observationFocus code="400" codeSystem="2.16.840.1.113883.3.795.12.100.1"/>
+                          <observationValue>
+                            <concept code="RECOMMENDED" displayName="Recommended"/>
+                          </observationValue>
+                          <interpretation code="DUE_NOW" displayName="Due Now"/>
+                        </observationResult>
+                      </relatedClinicalStatement>
+                    </substanceAdministrationProposal>
+                  </substanceAdministrationProposals>
+                </clinicalStatements>
+              </patient>
+            </vmrOutput>
+          </cdsOutput>
+        XML
+      end
+
+      before do
+        allow(HTTParty).to receive(:post).and_return(stub_response(success: true, body: success_body))
+      end
+
+      it "exposes them on the recommendation" do
+        recommendation = client.evaluate_immunizations(patient_data)[:data][:recommendations].first
+
+        expect(recommendation[:schedule_authorities]).to eq(
+          [
+            {
+              code: "ACIP_CDC",
+              name: "Advisory Committee on Immunization Practices / Centers for Disease Control and Prevention"
+            },
+            { code: "AAP", name: "American Academy of Pediatrics" },
+            { code: "AAFP", name: "American Academy of Family Physicians" }
+          ]
+        )
+      end
+
+      it "still reads status and reasons from the status observation" do
+        result = client.evaluate_immunizations(patient_data)
+        recommendation = result[:data][:recommendations].first
+
+        expect(recommendation[:status]).to eq(code: "RECOMMENDED", name: "Recommended")
+        expect(recommendation[:reasons]).to eq([{ code: "DUE_NOW", name: "Due Now" }])
+        expect(result[:data][:simplified_status]).to eq(ipv_opv: "overdue")
+      end
+    end
+
     it "defaults a blank gender to 'U' in the request payload" do
       blank_gender = patient_data.merge(patient: patient_data[:patient].merge(gender: ""))
       allow(HTTParty).to receive(:post).and_return(stub_response(success: true, body: success_body))
