@@ -1,5 +1,8 @@
+inherit_from: .rubocop_todo.yml
+
 AllCops:
   TargetRubyVersion: 3.1
+  SuggestExtensions: false
 
 Style/StringLiterals:
   Enabled: true
@@ -11,3 +14,15 @@ Style/StringLiteralsInInterpolation:
 
 Layout/LineLength:
   Max: 120
+
+# Methods after `private` are indented one level, Rails style.
+Layout/IndentationConsistency:
+  EnforcedStyle: indented_internal_methods
+
+# With indented private methods, `private` is followed directly by them.
+Layout/EmptyLinesAroundAccessModifier:
+  Enabled: false
+
+Metrics/BlockLength:
+  Exclude:
+    - "spec/**/*"

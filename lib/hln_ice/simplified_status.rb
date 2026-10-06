@@ -9,7 +9,7 @@ module HlnIce
       "CONDITIONAL" => "conditional",
       "FUTURE_RECOMMENDED" => "compliant",
       "NOT_RECOMMENDED" => "compliant",
-      "RECOMMENDED" => "overdue",
+      "RECOMMENDED" => "overdue"
     }.freeze
 
     # Mapping from ICE vaccine groups to our immunization keys
@@ -23,7 +23,7 @@ module HlnIce
       "MMR Vaccine Group" => :mmr,
       "Pneumococcal Vaccine Group" => :pcv,
       "Polio Vaccine Group" => :ipv_opv,
-      "Varicella Vaccine Group" => :var,
+      "Varicella Vaccine Group" => :var
     }.freeze
 
     def initialize(recommendations)
@@ -50,9 +50,7 @@ module HlnIce
         if status == "conditional"
           # Check if any reason indicates medical exemption
           has_medical_exemption = recommendation[:reasons].any? { |r| r[:code] == "MEDICAL_EXEMPTION" }
-          if has_medical_exemption
-            status = "medically_exempt"
-          end
+          status = "medically_exempt" if has_medical_exemption
         end
 
         # Store in our simplified mapping

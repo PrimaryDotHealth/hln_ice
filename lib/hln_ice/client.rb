@@ -42,7 +42,7 @@ module HlnIce
         )
 
         response.success?
-      rescue => e
+      rescue StandardError => e
         logger.error("ICE service unavailable: #{e.message}")
         false
       end
@@ -75,7 +75,7 @@ module HlnIce
         else
           handle_error_response(response)
         end
-      rescue => e
+      rescue StandardError => e
         retries += 1
         if retries <= max_retries
           logger.warn("Retrying ICE request (#{retries}/#{max_retries}): #{e.message}")
@@ -118,7 +118,7 @@ module HlnIce
             error: "No valid response found in ICE output."
           }
         end
-      rescue => e
+      rescue StandardError => e
         logger.error("Error parsing ICE response: #{e.message}")
         { success: false, error: "Error parsing ICE response: #{e.message}" }
       end
@@ -128,8 +128,8 @@ module HlnIce
 
         begin
           error_details = JSON.parse(response.body)
-          error_message += " - #{error_details['message'] || error_details['error'] || response.body}"
-        rescue
+          error_message += " - #{error_details["message"] || error_details["error"] || response.body}"
+        rescue StandardError
           error_message += " - #{response.body}"
         end
 

@@ -27,9 +27,9 @@ module HlnIce
 
         # ICE dates are in format: YYYYMMDDHHMMSS.000+0000
         if ice_date.match(/^(\d{4})(\d{2})(\d{2})/)
-          year = $1
-          month = $2
-          day = $3
+          year = ::Regexp.last_match(1)
+          month = ::Regexp.last_match(2)
+          day = ::Regexp.last_match(3)
           "#{year}-#{month}-#{day}"
         else
           ice_date
@@ -44,7 +44,7 @@ module HlnIce
           date = Date.parse(date_string)
           # Format as YYYYMMDD
           date.strftime("%Y%m%d")
-        rescue
+        rescue StandardError
           # If parsing fails, try to use the original string
           date_string
         end

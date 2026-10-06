@@ -115,19 +115,19 @@ module HlnIce
               high_date = format_date_for_ice(event[:administrationTimeInterval][:high])
 
               xml_payload += <<~XML
-                    <substanceAdministrationEvent>
-                      <templateId root="2.16.840.1.113883.3.795.11.9.1.1"/>
-                      <id root="#{event[:id] || SecureRandom.uuid}"/>
-                      <substanceAdministrationGeneralPurpose code="384810002" codeSystem="2.16.840.1.113883.6.5"/>
-                      <substance>
-                        <id root="#{event[:substance][:id] || SecureRandom.uuid}"/>
-                        <substanceCode code="#{substance_code[:code]}"
-                                    codeSystem="2.16.840.1.113883.12.292"
-                                    displayName="#{substance_code[:displayName]}"
-                                    originalText="#{substance_code[:displayName]}"/>
-                      </substance>
-                      <administrationTimeInterval low="#{low_date}" high="#{high_date}"/>
-                    </substanceAdministrationEvent>
+                <substanceAdministrationEvent>
+                  <templateId root="2.16.840.1.113883.3.795.11.9.1.1"/>
+                  <id root="#{event[:id] || SecureRandom.uuid}"/>
+                  <substanceAdministrationGeneralPurpose code="384810002" codeSystem="2.16.840.1.113883.6.5"/>
+                  <substance>
+                    <id root="#{event[:substance][:id] || SecureRandom.uuid}"/>
+                    <substanceCode code="#{substance_code[:code]}"
+                                codeSystem="2.16.840.1.113883.12.292"
+                                displayName="#{substance_code[:displayName]}"
+                                originalText="#{substance_code[:displayName]}"/>
+                  </substance>
+                  <administrationTimeInterval low="#{low_date}" high="#{high_date}"/>
+                </substanceAdministrationEvent>
               XML
             end
           end

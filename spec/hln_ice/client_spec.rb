@@ -403,10 +403,8 @@ RSpec.describe HlnIce::Client do
       client.evaluate_immunizations(blank_gender)
 
       expect(HTTParty).to have_received(:post) do |_url, options|
-        payload = options[:body]
-        decoded = Base64.decode64(JSON.parse(payload).dig(
-          "evaluationRequest", "dataRequirementItemData", 0, "data", "base64EncodedPayload", 0
-        ))
+        path = ["evaluationRequest", "dataRequirementItemData", 0, "data", "base64EncodedPayload", 0]
+        decoded = Base64.decode64(JSON.parse(options[:body]).dig(*path))
         expect(decoded).to include('code="U"')
       end
     end

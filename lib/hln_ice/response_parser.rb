@@ -43,9 +43,9 @@ module HlnIce
         patient = doc.xpath("//patient").first
         return { raw_xml: xml_string } unless patient
 
-        patient_id = patient.xpath("./id").first["extension"] rescue nil
-        birth_time = patient.xpath("./demographics/birthTime").first["value"] rescue nil
-        gender = patient.xpath("./demographics/gender").first["code"] rescue nil
+        patient_id = patient.xpath("./id").first&.[]("extension")
+        birth_time = patient.xpath("./demographics/birthTime").first&.[]("value")
+        gender = patient.xpath("./demographics/gender").first&.[]("code")
 
         # Format birth date if present
         birth_date = format_ice_date(birth_time)
@@ -83,9 +83,7 @@ module HlnIce
             }
 
             # Add supplemental text if available
-            if interpretation["originalText"]
-              reason[:supplemental_text] = interpretation["originalText"]
-            end
+            reason[:supplemental_text] = interpretation["originalText"] if interpretation["originalText"]
 
             reasons << reason
           end
