@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-06
+
+- Expose ICE's per-dose evaluations under `evaluations` in the result, with one entry per administered dose and vaccine group it counts toward (so a combination vaccine has several). Each entry has the caller's event id, CVX, administration date, vaccine group, dose number, validity, evaluation status, and reasons. Codes are passed through as ICE returns them. `recommendations` and `simplified_status` are unchanged.
+
 ## [0.3.0] - 2026-09-24
 
 - Expose schedule authorities (e.g. `ACIP_CDC`, `AAP`, `AAFP`) on each recommendation under `schedule_authorities` when the ICE server has `outputScheduleAuthorities` enabled. The key is omitted when the server does not return them.
