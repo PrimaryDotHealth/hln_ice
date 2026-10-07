@@ -6,7 +6,8 @@ Given a patient's demographics and immunization history, `HlnIce` builds the
 VMR (Virtual Medical Record) request, calls the ICE evaluation endpoint, and
 parses the response into:
 
-- a full list of **recommendations** (one per vaccine group, with status, reasons, and administration intervals), and
+- a full list of **recommendations** (one per vaccine group, with status, reasons, and administration intervals),
+- the **evaluations** of each administered dose (per vaccine group, with dose number, validity, and reasons), and
 - a **simplified status** map keyed by vaccine group — e.g. `{ ipv_opv: "overdue", mmr: "compliant" }`.
 
 The gem has no Rails or ActiveSupport dependency; it takes an injected logger
@@ -79,6 +80,7 @@ patient_data = {
       clinicalStatements: {
         substanceAdministrationEvents: [
           {
+            id: "1", # echoed back as event_id on evaluations; a UUID is generated if omitted
             substance: {
               substanceCode: { code: "10", displayName: "Polio" }
             },
@@ -114,6 +116,20 @@ On success:
           { code: "ACIP_CDC", name: "Advisory Committee on Immunization Practices / Centers for Disease Control and Prevention" },
           { code: "AAP", name: "American Academy of Pediatrics" }
         ]
+      }
+    ],
+    # One entry per administered dose and vaccine group it counts toward, so a
+    # combination vaccine has several. Codes are passed through from ICE.
+    evaluations: [
+      {
+        event_id: "1",
+        cvx: "10",
+        administered_on: "2020-03-01",
+        vaccine_group: { code: "400", name: "Polio Vaccine Group" },
+        dose_number: 1, # nil if ICE omits it
+        valid: true,
+        status: { code: "VALID", name: "Valid Dose" }, # e.g. VALID, INVALID, ACCEPTED
+        reasons: [] # e.g. [{ code: "BELOW_MINIMUM_INTERVAL", name: "Below Minimum Interval" }]
       }
     ],
     simplified_status: { ipv_opv: "overdue" }

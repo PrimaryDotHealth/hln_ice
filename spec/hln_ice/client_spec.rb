@@ -181,6 +181,221 @@ RSpec.describe HlnIce::Client do
       end
     end
 
+    context "with a recorded ICE 2.59.1 response" do
+      # Recorded from a real ICE 2.59.1 server: input events with ids "1"
+      # (CVX 141 influenza) and "2" (CVX 115 Tdap), both evaluated as valid.
+      let(:success_body) do
+        File.read(File.expand_path("../fixtures/ice/evaluate_schedule_authorities_first.json", __dir__))
+      end
+
+      before do
+        allow(HTTParty).to receive(:post).and_return(stub_response(success: true, body: success_body))
+      end
+
+      it "returns one evaluation per input event and vaccine group" do
+        evaluations = client.evaluate_immunizations(patient_data)[:data][:evaluations]
+
+        expect(evaluations).to eq(
+          [
+            {
+              event_id: "1",
+              cvx: "141",
+              administered_on: "2024-10-01",
+              vaccine_group: { code: "800", name: "Influenza Vaccine Group" },
+              dose_number: 1,
+              valid: true,
+              status: { code: "VALID", name: "Valid Dose" },
+              reasons: []
+            },
+            {
+              event_id: "2",
+              cvx: "115",
+              administered_on: "2019-05-02",
+              vaccine_group: { code: "200", name: "DTP Vaccine Group" },
+              dose_number: 1,
+              valid: true,
+              status: { code: "VALID", name: "Valid Dose" },
+              reasons: []
+            }
+          ]
+        )
+      end
+
+      it "leaves the patient, recommendations, and simplified status unchanged" do
+        data = client.evaluate_immunizations(patient_data)[:data]
+
+        expect(data.keys).to eq(%i[raw_xml patient recommendations evaluations simplified_status])
+        expect(data[:patient]).to eq(id: "1", birth_date: "1960-03-14", gender: "M")
+        expect(data[:recommendations].size).to eq(17)
+        expect(data[:recommendations].first).to eq(
+          vaccine: { code: "600", code_system: "2.16.840.1.113883.3.795.12.100.1", name: "Varicella Vaccine Group" },
+          status: { code: "CONDITIONAL", name: "Conditionally Recommended" },
+          reasons: [{ code: "HIGH_RISK", name: "Recommended for high-risk groups." }],
+          schedule_authorities: [
+            {
+              code: "ACIP_CDC",
+              name: "Advisory Committee on Immunization Practices / Centers for Disease Control and Prevention"
+            },
+            { code: "AAP", name: "American Academy of Pediatrics" },
+            { code: "AAFP", name: "American Academy of Family Physicians" }
+          ]
+        )
+        expect(data[:simplified_status]).to eq(
+          var: "conditional", hib: "conditional", pcv: "overdue", ipv_opv: "conditional", hep_a: "conditional",
+          dtap_tdap: "overdue", mmr: "overdue", hpv: "compliant", hep_b: "conditional"
+        )
+      end
+    end
+
+    context "when the service evaluates doses as invalid or for several vaccine groups" do
+      # Built by hand: the recorded response only has valid, single-group doses.
+      # It follows the structure of the recorded response and of the examples in
+      # ICE's vMR Implementation Guide (docs/implementation-guides/ in
+      # cdsframework/ice). The INVALID status and BELOW_MINIMUM_INTERVAL reason
+      # come from that guide's example; the "Invalid Dose" display name is the
+      # one in ICE's supportedEvaluationStatuses.yml. The second dose has no
+      # doseNumber, as in the guide's invalid-dose example.
+      #
+      # Event "1" is a CVX 110 (DTaP-HepB-IPV) combination vaccine, abridged to
+      # two of the groups it counts toward (DTP and Hep B). Event "2" is an
+      # invalid Hep B dose.
+      let(:vmr_xml) do
+        <<~XML
+          <?xml version="1.0" encoding="UTF-8"?>
+          <cdsOutput>
+            <vmrOutput>
+              <patient>
+                <id extension="12345"/>
+                <clinicalStatements>
+                  <substanceAdministrationEvents>
+                    <substanceAdministrationEvent>
+                      <id root="1"/>
+                      <substance><substanceCode code="110" codeSystem="2.16.840.1.113883.12.292"/></substance>
+                      <administrationTimeInterval low="20200301000000.000+0000" high="20200301000000.000+0000"/>
+                      <relatedClinicalStatement>
+                        <substanceAdministrationEvent>
+                          <substance><substanceCode code="110" codeSystem="2.16.840.1.113883.12.292"/></substance>
+                          <doseNumber value="1"/>
+                          <administrationTimeInterval low="20200301000000.000+0000" high="20200301000000.000+0000"/>
+                          <isValid value="true"/>
+                          <relatedClinicalStatement>
+                            <observationResult>
+                              <observationFocus code="200" codeSystem="2.16.840.1.113883.3.795.12.100.1"
+                                                displayName="DTP Vaccine Group"/>
+                              <observationValue>
+                                <concept code="VALID" codeSystem="2.16.840.1.113883.3.795.12.100.2" displayName="Valid Dose"/>
+                              </observationValue>
+                            </observationResult>
+                          </relatedClinicalStatement>
+                        </substanceAdministrationEvent>
+                      </relatedClinicalStatement>
+                      <relatedClinicalStatement>
+                        <substanceAdministrationEvent>
+                          <substance><substanceCode code="110" codeSystem="2.16.840.1.113883.12.292"/></substance>
+                          <doseNumber value="1"/>
+                          <administrationTimeInterval low="20200301000000.000+0000" high="20200301000000.000+0000"/>
+                          <isValid value="true"/>
+                          <relatedClinicalStatement>
+                            <observationResult>
+                              <observationFocus code="100" codeSystem="2.16.840.1.113883.3.795.12.100.1"
+                                                displayName="Hep B Vaccine Group"/>
+                              <observationValue>
+                                <concept code="VALID" codeSystem="2.16.840.1.113883.3.795.12.100.2" displayName="Valid Dose"/>
+                              </observationValue>
+                            </observationResult>
+                          </relatedClinicalStatement>
+                        </substanceAdministrationEvent>
+                      </relatedClinicalStatement>
+                    </substanceAdministrationEvent>
+                    <substanceAdministrationEvent>
+                      <id root="2"/>
+                      <substance><substanceCode code="08" codeSystem="2.16.840.1.113883.12.292"/></substance>
+                      <administrationTimeInterval low="20200315000000.000+0000" high="20200315000000.000+0000"/>
+                      <relatedClinicalStatement>
+                        <substanceAdministrationEvent>
+                          <substance><substanceCode code="08" codeSystem="2.16.840.1.113883.12.292"/></substance>
+                          <administrationTimeInterval low="20200315000000.000+0000" high="20200315000000.000+0000"/>
+                          <isValid value="false"/>
+                          <relatedClinicalStatement>
+                            <observationResult>
+                              <observationFocus code="100" codeSystem="2.16.840.1.113883.3.795.12.100.1"
+                                                displayName="Hep B Vaccine Group"/>
+                              <observationValue>
+                                <concept code="INVALID" codeSystem="2.16.840.1.113883.3.795.12.100.2"
+                                         displayName="Invalid Dose"/>
+                              </observationValue>
+                              <interpretation code="BELOW_MINIMUM_INTERVAL" codeSystem="2.16.840.1.113883.3.795.12.100.3"
+                                              displayName="Below Minimum Interval" originalText="BELOW_MINIMUM_INTERVAL"/>
+                            </observationResult>
+                          </relatedClinicalStatement>
+                        </substanceAdministrationEvent>
+                      </relatedClinicalStatement>
+                    </substanceAdministrationEvent>
+                  </substanceAdministrationEvents>
+                </clinicalStatements>
+              </patient>
+            </vmrOutput>
+          </cdsOutput>
+        XML
+      end
+
+      let(:evaluations) { client.evaluate_immunizations(patient_data)[:data][:evaluations] }
+
+      before do
+        allow(HTTParty).to receive(:post).and_return(stub_response(success: true, body: success_body))
+      end
+
+      it "returns one evaluation per vaccine group a combination vaccine counts toward" do
+        expect(evaluations.select { |e| e[:event_id] == "1" }).to eq(
+          [
+            {
+              event_id: "1",
+              cvx: "110",
+              administered_on: "2020-03-01",
+              vaccine_group: { code: "200", name: "DTP Vaccine Group" },
+              dose_number: 1,
+              valid: true,
+              status: { code: "VALID", name: "Valid Dose" },
+              reasons: []
+            },
+            {
+              event_id: "1",
+              cvx: "110",
+              administered_on: "2020-03-01",
+              vaccine_group: { code: "100", name: "Hep B Vaccine Group" },
+              dose_number: 1,
+              valid: true,
+              status: { code: "VALID", name: "Valid Dose" },
+              reasons: []
+            }
+          ]
+        )
+      end
+
+      it "returns the status and reasons of an invalid dose, with a nil dose number when ICE omits it" do
+        expect(evaluations.select { |e| e[:event_id] == "2" }).to eq(
+          [
+            {
+              event_id: "2",
+              cvx: "08",
+              administered_on: "2020-03-15",
+              vaccine_group: { code: "100", name: "Hep B Vaccine Group" },
+              dose_number: nil,
+              valid: false,
+              status: { code: "INVALID", name: "Invalid Dose" },
+              reasons: [{ code: "BELOW_MINIMUM_INTERVAL", name: "Below Minimum Interval" }]
+            }
+          ]
+        )
+      end
+    end
+
+    it "returns no evaluations when the service returns no events" do
+      allow(HTTParty).to receive(:post).and_return(stub_response(success: true, body: success_body))
+
+      expect(client.evaluate_immunizations(patient_data)[:data][:evaluations]).to eq([])
+    end
+
     it "defaults a blank gender to 'U' in the request payload" do
       blank_gender = patient_data.merge(patient: patient_data[:patient].merge(gender: ""))
       allow(HTTParty).to receive(:post).and_return(stub_response(success: true, body: success_body))
@@ -188,10 +403,8 @@ RSpec.describe HlnIce::Client do
       client.evaluate_immunizations(blank_gender)
 
       expect(HTTParty).to have_received(:post) do |_url, options|
-        payload = options[:body]
-        decoded = Base64.decode64(JSON.parse(payload).dig(
-          "evaluationRequest", "dataRequirementItemData", 0, "data", "base64EncodedPayload", 0
-        ))
+        path = ["evaluationRequest", "dataRequirementItemData", 0, "data", "base64EncodedPayload", 0]
+        decoded = Base64.decode64(JSON.parse(options[:body]).dig(*path))
         expect(decoded).to include('code="U"')
       end
     end
