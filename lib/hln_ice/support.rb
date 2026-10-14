@@ -6,7 +6,26 @@ module HlnIce
   # Helpers shared by the request builder and response parsers. Included as
   # private instance methods.
   module Support
+    VACCINE_GROUP_CODE_SYSTEM = "2.16.840.1.113883.3.795.12.100.1"
+    ICE_OUTPUT_FOCUS_CODE_SYSTEM = "2.16.840.1.113883.3.795.12.100.500"
+
     private
+      # The observations a vMR statement relates directly to, selected by their
+      # observationFocus rather than by position: ICE orders them differently
+      # from one request to the next, and nests further observations in them.
+      def related_observations(statement, focus_code_system:, focus_code: nil)
+        focus = "@codeSystem='#{focus_code_system}'"
+        focus += " and @code='#{focus_code}'" if focus_code
+
+        statement.xpath("./relatedClinicalStatement/observationResult[observationFocus[#{focus}]]")
+      end
+
+      # The observation carrying ICE's status for the vaccine group, e.g. a
+      # recommendation or dose evaluation status. ICE sends one per statement.
+      def vaccine_group_observation(statement)
+        related_observations(statement, focus_code_system: VACCINE_GROUP_CODE_SYSTEM).first
+      end
+
       # Plain-Ruby equivalent of ActiveSupport's `blank?`.
       def blank?(value)
         return true if value.nil?

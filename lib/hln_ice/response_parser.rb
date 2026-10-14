@@ -33,127 +33,108 @@ module HlnIce
       attr_reader :response_body
 
       def parse_xml_response(xml_string)
-        # Parse the XML
         doc = Nokogiri::XML(xml_string)
 
         # Remove namespaces to simplify parsing
         doc.remove_namespaces!
 
-        # Extract patient information
-        patient = doc.xpath("//patient").first
+        patient = doc.at_xpath("/cdsOutput/vmrOutput/patient")
         return { raw_xml: xml_string } unless patient
 
-        patient_id = patient.xpath("./id").first&.[]("extension")
-        birth_time = patient.xpath("./demographics/birthTime").first&.[]("value")
-        gender = patient.xpath("./demographics/gender").first&.[]("code")
+        recommendations = parse_recommendations(patient)
 
-        # Format birth date if present
-        birth_date = format_ice_date(birth_time)
-
-        # Extract vaccine recommendations
-        all_recommendations = []
-
-        doc.xpath("//substanceAdministrationProposal").each do |proposal|
-          # Get the substance code and name
-          substance_element = proposal.xpath("./substance/substanceCode").first
-          next unless substance_element
-
-          vaccine_code        = substance_element["code"]
-          vaccine_name        = substance_element["displayName"]
-          vaccine_code_system = substance_element["codeSystem"]
-
-          # Get the clinical observation result carrying the recommendation status.
-          # A proposal may contain other observation results (e.g. schedule
-          # authorities), in any order, so select the one with a status concept.
-          observation = proposal.xpath(".//observationResult[observationValue/concept]").first
-          next unless observation
-
-          # Get recommendation status
-          status_element = observation.xpath(".//observationValue/concept").first
-
-          status_code = status_element["code"]
-          status_name = status_element["displayName"]
-
-          # Get interpretation reasons
-          reasons = []
-          observation.xpath(".//interpretation").each do |interpretation|
-            reason = {
-              code: interpretation["code"],
-              name: interpretation["displayName"]
-            }
-
-            # Add supplemental text if available
-            reason[:supplemental_text] = interpretation["originalText"] if interpretation["originalText"]
-
-            reasons << reason
-          end
-
-          # Get administration time intervals if available
-          proposed_interval = proposal.xpath("./proposedAdministrationTimeInterval").first
-          valid_interval = proposal.xpath("./validAdministrationTimeInterval").first
-
-          intervals = {}
-          if proposed_interval
-            intervals[:proposed] = {
-              low: format_ice_date(proposed_interval["low"]),
-              high: format_ice_date(proposed_interval["high"])
-            }.compact
-          end
-
-          if valid_interval
-            intervals[:valid] = {
-              low: format_ice_date(valid_interval["low"]),
-              high: format_ice_date(valid_interval["high"])
-            }.compact
-          end
-
-          # Build the recommendation object
-          recommendation = {
-            vaccine: {
-              code: vaccine_code,
-              code_system: vaccine_code_system,
-              name: vaccine_name
-            },
-            status: {
-              code: status_code,
-              name: status_name
-            },
-            reasons:
-          }
-
-          # Only add intervals if they exist
-          recommendation[:intervals] = intervals if present?(intervals)
-
-          # Only add schedule authorities if the service returned them
-          # (requires the ICE outputScheduleAuthorities property)
-          schedule_authorities = parse_schedule_authorities(proposal)
-          recommendation[:schedule_authorities] = schedule_authorities if present?(schedule_authorities)
-
-          all_recommendations << recommendation
-        end
-
-        # Build the final result structure
         {
           raw_xml: xml_string,
-          patient: {
-            id: patient_id,
-            birth_date: birth_date || birth_time,
-            gender:
-          }.compact,
-          recommendations: all_recommendations, # Keep the original flat list for backward compatibility
+          patient: parse_patient(patient),
+          recommendations:,
           evaluations: EvaluationsParser.new(patient).evaluations,
-          simplified_status: SimplifiedStatus.new(all_recommendations).to_h
+          simplified_status: SimplifiedStatus.new(recommendations).to_h
         }
+      end
+
+      def parse_patient(patient)
+        birth_time = patient.at_xpath("./demographics/birthTime")&.[]("value")
+
+        {
+          id: patient.at_xpath("./id")&.[]("extension"),
+          birth_date: format_ice_date(birth_time) || birth_time,
+          gender: patient.at_xpath("./demographics/gender")&.[]("code")
+        }.compact
+      end
+
+      def parse_recommendations(patient)
+        proposals = patient.xpath(
+          "./clinicalStatements/substanceAdministrationProposals/substanceAdministrationProposal"
+        )
+
+        proposals.filter_map { |proposal| parse_recommendation(proposal) }
+      end
+
+      # Returns nil when the proposal has no vaccine group status observation.
+      def parse_recommendation(proposal)
+        substance = proposal.at_xpath("./substance/substanceCode")
+        observation = vaccine_group_observation(proposal)
+        status = observation&.at_xpath("./observationValue/concept")
+        return unless substance && status
+
+        recommendation = {
+          vaccine: {
+            code: substance["code"],
+            code_system: substance["codeSystem"],
+            name: substance["displayName"]
+          },
+          status: {
+            code: status["code"],
+            name: status["displayName"]
+          },
+          reasons: parse_reasons(observation)
+        }
+
+        intervals = parse_intervals(proposal)
+        recommendation[:intervals] = intervals if present?(intervals)
+
+        # Only add schedule authorities if the service returned them
+        # (requires the ICE outputScheduleAuthorities property)
+        schedule_authorities = parse_schedule_authorities(proposal)
+        recommendation[:schedule_authorities] = schedule_authorities if present?(schedule_authorities)
+
+        recommendation
+      end
+
+      def parse_reasons(observation)
+        observation.xpath("./interpretation").map do |interpretation|
+          reason = {
+            code: interpretation["code"],
+            name: interpretation["displayName"]
+          }
+          reason[:supplemental_text] = interpretation["originalText"] if interpretation["originalText"]
+          reason
+        end
+      end
+
+      def parse_intervals(proposal)
+        {
+          proposed: parse_interval(proposal.at_xpath("./proposedAdministrationTimeInterval")),
+          valid: parse_interval(proposal.at_xpath("./validAdministrationTimeInterval"))
+        }.compact
+      end
+
+      def parse_interval(interval)
+        return unless interval
+
+        {
+          low: format_ice_date(interval["low"]),
+          high: format_ice_date(interval["high"])
+        }.compact
       end
 
       # Extract the schedule authorities (e.g. ACIP_CDC, AAP) for a proposal.
       # Returns an empty array when the service did not include them.
       def parse_schedule_authorities(proposal)
-        authorities = proposal.xpath(
-          ".//observationResult[observationFocus/@code='ICE_VACCINE_GROUP_SCHEDULE_AUTHORITIES']/interpretation"
-        )
+        observations = related_observations(proposal, focus_code_system: ICE_OUTPUT_FOCUS_CODE_SYSTEM,
+                                                      focus_code: "ICE_VACCINE_GROUP_SCHEDULE_AUTHORITIES")
 
-        authorities.map do |interpretation|
+        observations.xpath("./interpretation").map do |interpretation|
           {
             code: interpretation["code"],
             name: interpretation["displayName"]

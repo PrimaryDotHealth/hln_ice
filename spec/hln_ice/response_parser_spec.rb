@@ -63,4 +63,111 @@ RSpec.describe HlnIce::ResponseParser do
     )
     expect(recommendation[:reasons]).to eq([{ code: "DUE_NOW", name: "Due Now", supplemental_text: "Give today" }])
   end
+
+  describe "anchoring to the vMR structure" do
+    def proposal(statements, code: "400", name: "Polio Vaccine Group")
+      <<~XML
+        <substanceAdministrationProposal>
+          <substance><substanceCode code="#{code}" codeSystem="2.16.840.1.113883.3.795.12.100.1"
+                                    displayName="#{name}"/></substance>
+          #{statements}
+        </substanceAdministrationProposal>
+      XML
+    end
+
+    def status_statement(status: "RECOMMENDED", reason: "DUE_NOW", nested: "")
+      <<~XML
+        <relatedClinicalStatement><observationResult>
+          <observationFocus code="400" codeSystem="2.16.840.1.113883.3.795.12.100.1"/>
+          <observationValue><concept code="#{status}" codeSystem="2.16.840.1.113883.3.795.12.100.5"/></observationValue>
+          <interpretation code="#{reason}" codeSystem="2.16.840.1.113883.3.795.12.100.6"/>
+          #{nested}
+        </observationResult></relatedClinicalStatement>
+      XML
+    end
+
+    def series_statement(selections)
+      <<~XML
+        <relatedClinicalStatement><observationResult>
+          <observationFocus code="SERIES_DISPLAY_OPTIONS" codeSystem="2.16.840.1.113883.3.795.12.100.500"/>
+          #{selections}
+        </observationResult></relatedClinicalStatement>
+      XML
+    end
+
+    def selection(type, series, extra: "")
+      <<~XML
+        <relatedClinicalStatement><observationResult>
+          <observationFocus code="#{type}" codeSystem="2.16.840.1.113883.3.795.12.100.501"/>
+          <observationValue>
+            <concept code="#{series}" codeSystem="2.16.840.1.113883.3.795.12.100.10" displayName="#{series} name"/>
+          </observationValue>
+          #{extra}
+        </observationResult></relatedClinicalStatement>
+      XML
+    end
+
+    def data_for(proposals)
+      xml = <<~XML
+        <cdsOutput><vmrOutput><patient><clinicalStatements>
+          <substanceAdministrationProposals>#{proposals}</substanceAdministrationProposals>
+        </clinicalStatements></patient></vmrOutput></cdsOutput>
+      XML
+
+      described_class.new(body_for(xml)).data
+    end
+
+    def recommendation_for(statements)
+      data_for(proposal(statements))[:recommendations].first
+    end
+
+    it "takes reasons only from the status observation's own interpretations" do
+      nested_interpretation = <<~XML
+        <relatedClinicalStatement><observationResult>
+          <observationFocus code="OTHER" codeSystem="2.16.840.1.113883.3.795.12.100.500"/>
+          <interpretation code="NESTED" codeSystem="2.16.840.1.113883.3.795.12.100.6"/>
+        </observationResult></relatedClinicalStatement>
+      XML
+      series = series_statement(selection("SERIES_DISPLAY_UNAMBIGUOUS", "S", extra: nested_interpretation))
+
+      recommendation = recommendation_for(series + status_statement(nested: nested_interpretation))
+
+      expect(recommendation[:reasons]).to eq([{ code: "DUE_NOW", name: nil }])
+    end
+
+    it "takes schedule authorities only from the proposal's own authorities observation" do
+      nested_authorities = <<~XML
+        <relatedClinicalStatement><observationResult>
+          <observationFocus code="ICE_VACCINE_GROUP_SCHEDULE_AUTHORITIES"
+                            codeSystem="2.16.840.1.113883.3.795.12.100.500"/>
+          <interpretation code="NESTED" codeSystem="2.16.840.1.113883.3.795.12.100.12"/>
+        </observationResult></relatedClinicalStatement>
+      XML
+      series = series_statement(selection("SERIES_DISPLAY_UNAMBIGUOUS", "S", extra: nested_authorities))
+
+      expect(recommendation_for(series + status_statement)).not_to have_key(:schedule_authorities)
+    end
+
+    it "skips a proposal with no vaccine group status observation" do
+      series = series_statement(selection("SERIES_DISPLAY_UNAMBIGUOUS", "S"))
+
+      expect(data_for(proposal(series))[:recommendations]).to eq([])
+    end
+
+    it "does not treat a vMR element nested inside a statement as a patient or proposal" do
+      nested = "<relatedClinicalStatement>#{proposal(status_statement, code: "999", name: "Nested")}" \
+               "<patient><id extension=\"other\"/></patient></relatedClinicalStatement>"
+
+      data = data_for(proposal(status_statement + nested))
+
+      expect(data[:patient]).to eq({})
+      expect(data[:recommendations].map { _1[:vaccine][:name] }).to eq(["Polio Vaccine Group"])
+    end
+
+    it "ignores a patient element outside vmrOutput" do
+      xml = "<cdsOutput><other><patient><id extension=\"other\"/></patient></other></cdsOutput>"
+
+      expect(described_class.new(body_for(xml)).data).to eq(raw_xml: xml)
+    end
+  end
 end

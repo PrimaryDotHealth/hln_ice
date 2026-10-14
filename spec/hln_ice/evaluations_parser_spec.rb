@@ -13,12 +13,13 @@ RSpec.describe HlnIce::EvaluationsParser do
     described_class.new(Nokogiri::XML(xml).at_xpath("/patient")).evaluations
   end
 
-  def component(status: true, is_valid: nil)
+  def component(status: true, is_valid: nil, other_statements: "")
     <<~XML
       <relatedClinicalStatement>
         <substanceAdministrationEvent>
           <administrationTimeInterval low="20200301000000.000+0000"/>
           #{is_valid && %(<isValid value="#{is_valid}"/>)}
+          #{other_statements}
           <relatedClinicalStatement>
             <observationResult>
               <observationFocus code="400" codeSystem="2.16.840.1.113883.3.795.12.100.1" displayName="Polio Vaccine Group"/>
@@ -47,5 +48,19 @@ RSpec.describe HlnIce::EvaluationsParser do
 
   it "reads isValid as a boolean" do
     expect(evaluations_for(event(component(is_valid: "false"))).first[:valid]).to be(false)
+  end
+
+  it "reads the status from the vaccine group observation, not another observation with a coded value" do
+    other = <<~XML
+      <relatedClinicalStatement>
+        <observationResult>
+          <observationFocus code="OTHER" codeSystem="2.16.840.1.113883.3.795.12.100.500"/>
+          <observationValue><concept code="NOT_A_STATUS"/></observationValue>
+        </observationResult>
+      </relatedClinicalStatement>
+    XML
+    evaluations = evaluations_for(event(component(other_statements: other)))
+
+    expect(evaluations.map { _1[:status][:code] }).to eq(["ACCEPTED"])
   end
 end
