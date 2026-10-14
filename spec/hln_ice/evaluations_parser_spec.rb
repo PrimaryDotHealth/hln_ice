@@ -21,7 +21,7 @@ RSpec.describe HlnIce::EvaluationsParser do
           #{is_valid && %(<isValid value="#{is_valid}"/>)}
           <relatedClinicalStatement>
             <observationResult>
-              <observationFocus code="400" displayName="Polio Vaccine Group"/>
+              <observationFocus code="400" codeSystem="2.16.840.1.113883.3.795.12.100.1" displayName="Polio Vaccine Group"/>
               #{status && '<observationValue><concept code="ACCEPTED" displayName="Accepted Dose"/></observationValue>'}
             </observationResult>
           </relatedClinicalStatement>

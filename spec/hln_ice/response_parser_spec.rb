@@ -38,7 +38,7 @@ RSpec.describe HlnIce::ResponseParser do
 
   it "reads intervals and supplemental reason text from a proposal" do
     xml = <<~XML
-      <cdsOutput><vmrOutput><patient>
+      <cdsOutput><vmrOutput><patient><clinicalStatements><substanceAdministrationProposals>
         <substanceAdministrationProposal>
           <substance><substanceCode code="400" codeSystem="2.16.840.1.113883.3.795.12.100.1"
                                     displayName="Polio Vaccine Group"/></substance>
@@ -46,12 +46,13 @@ RSpec.describe HlnIce::ResponseParser do
           <validAdministrationTimeInterval low="20200201" high="20200401"/>
           <relatedClinicalStatement>
             <observationResult>
+              <observationFocus code="400" codeSystem="2.16.840.1.113883.3.795.12.100.1"/>
               <observationValue><concept code="RECOMMENDED" displayName="Recommended"/></observationValue>
               <interpretation code="DUE_NOW" displayName="Due Now" originalText="Give today"/>
             </observationResult>
           </relatedClinicalStatement>
         </substanceAdministrationProposal>
-      </patient></vmrOutput></cdsOutput>
+      </substanceAdministrationProposals></clinicalStatements></patient></vmrOutput></cdsOutput>
     XML
 
     recommendation = described_class.new(body_for(xml)).data[:recommendations].first
