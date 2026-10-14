@@ -123,9 +123,10 @@ On success:
         # starts_on/ends_on are read from the end of ICE's season name, e.g.
         # "2026-2027 COVID-19 Season (08/28/2026 - 01/01/2100)", because ICE sends
         # no structured season dates. They are nil if the name is not in that format.
-        # ICE uses an end of 2100-01-01 for an open-ended season. For influenza, ICE
-        # may send a default code and label (e.g. 20152016_INFLUENZA_SEASON) with the
-        # current season's dates; the dates are the ones to rely on.
+        # ICE uses an end of 2100-01-01 for an open-ended season. For a season newer
+        # than its newest coded one (for influenza, 20152016_INFLUENZA_SEASON in ICE's
+        # supportedSeasons.yml), ICE sends that code and label with the actual season's
+        # dates; the dates are the ones to rely on.
         season: {
           code: "COVID_19_AUG_2026_SEASON",
           name: "2026-2027 COVID-19 Season (08/28/2026 - 01/01/2100)",
