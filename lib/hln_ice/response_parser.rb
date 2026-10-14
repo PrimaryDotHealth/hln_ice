@@ -98,7 +98,7 @@ module HlnIce
         schedule_authorities = parse_schedule_authorities(proposal)
         recommendation[:schedule_authorities] = schedule_authorities if present?(schedule_authorities)
 
-        recommendation
+        recommendation.merge(parse_series(proposal))
       end
 
       def parse_reasons(observation)
@@ -140,6 +140,18 @@ module HlnIce
             name: interpretation["displayName"]
           }
         end
+      end
+
+      # Only the fields ICE sent, so responses without series output parse as
+      # before.
+      def parse_series(proposal)
+        series = SeriesParser.new(proposal)
+
+        {
+          series: series.series,
+          season: series.season,
+          doses_remaining: series.doses_remaining
+        }.compact
       end
   end
 end

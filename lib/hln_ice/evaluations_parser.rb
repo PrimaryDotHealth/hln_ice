@@ -38,8 +38,9 @@ module HlnIce
         focus = observation.at_xpath("./observationFocus")
         dose_number = component.at_xpath("./doseNumber")&.[]("value")
         valid = component.at_xpath("./isValid")&.[]("value")
+        series = SeriesParser.new(component).series
 
-        {
+        evaluation = {
           event_id:,
           cvx:,
           administered_on: format_ice_date(component.at_xpath("./administrationTimeInterval")&.[]("low")),
@@ -51,6 +52,8 @@ module HlnIce
             { code: interpretation["code"], name: interpretation["displayName"] }
           end
         }
+        evaluation[:series] = series if series
+        evaluation
       end
   end
 end

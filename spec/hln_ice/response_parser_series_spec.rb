@@ -18,6 +18,12 @@ RSpec.describe HlnIce::ResponseParser do
   let(:data) { fixture_data("evaluate_series_output") }
   let(:recommendations) { by_vaccine(data[:recommendations]) }
 
+  hep_b_series = {
+    code: "HEP_B_ADULT_3_DOSE_SERIES",
+    name: "HepB Adult 3-Dose Series",
+    selection: "best_guess"
+  }
+
   it "reads each recommendation's status and reasons from its vaccine group observation" do
     statuses = data[:recommendations].to_h do |recommendation|
       [recommendation[:vaccine][:name], [recommendation[:status][:code], recommendation[:reasons].map { _1[:code] }]]
@@ -64,6 +70,88 @@ RSpec.describe HlnIce::ResponseParser do
       schedule_authorities: [
         { code: "AAP", name: "American Academy of Pediatrics" },
         { code: "AAFP", name: "American Academy of Family Physicians" }
+      ],
+      series: hep_b_series,
+      doses_remaining: 2
+    )
+  end
+
+  it "reads the selected series and doses remaining for each recommendation" do
+    series = data[:recommendations].to_h do |recommendation|
+      [recommendation[:vaccine][:name], recommendation.slice(:series, :doses_remaining)]
+    end
+
+    expect(series).to include(
+      "Tdap" => { series: { code: "DTP_3_DOSE_SERIES", name: "DTP 3-Dose Series", selection: "best_guess" },
+                  doses_remaining: 3 },
+      "Pneumococcal Vaccine Group" => {
+        series: { code: "PNEUMOCOCCAL_SERIES", name: "Pneumococcal Series", selection: "unambiguous" },
+        doses_remaining: 3
+      },
+      "Rotavirus Vaccine Group" => {
+        series: { code: "ROTAVIRUS_3_DOSE_SERIES", name: "Rotavirus 3-Dose Series", selection: "best_guess" },
+        doses_remaining: 0
+      },
+      "MMR Vaccine Group" => {
+        series: { code: "MMR_2_DOSE_SERIES", name: "MMR 2-Dose Series", selection: "unambiguous" },
+        doses_remaining: 0
+      }
+    )
+  end
+
+  it "reads the season of a seasonal vaccine's series" do
+    expect(recommendations["COVID-19 Vaccine Group"].slice(:series, :season, :doses_remaining)).to eq(
+      series: {
+        code: "COVID_19_AUG_2025_2_Y_TO_64_Y_SERIES",
+        name: "COVID-19 Seasonal 1-dose COVID-19 Series (>= 2 - 64 years)",
+        selection: "best_guess"
+      },
+      season: {
+        code: "COVID_19_AUG_2026_SEASON",
+        name: "2026-2027 COVID-19 Season (08/28/2026 - 01/01/2100)",
+        starts_on: "2026-08-28",
+        ends_on: "2100-01-01"
+      },
+      doses_remaining: 1
+    )
+    expect(recommendations["Influenza Vaccine Group"][:season]).to eq(
+      code: "20152016_INFLUENZA_SEASON",
+      name: "2015-2016 Influenza Season (07/01/2026 - 06/30/2027)",
+      starts_on: "2026-07-01",
+      ends_on: "2027-06-30"
+    )
+    expect(recommendations["RSV Vaccine Group"][:season]).to be_nil
+  end
+
+  it "leaves out series fields for a recommendation ICE sent none for" do
+    expect(recommendations["HPV Vaccine Group"].keys).to eq(%i[vaccine status reasons schedule_authorities])
+  end
+
+  it "reads the series a dose was evaluated against" do
+    expect(data[:evaluations]).to eq(
+      [
+        {
+          event_id: "e1",
+          cvx: "43",
+          administered_on: "2025-01-01",
+          vaccine_group: { code: "100", name: "Hep B Vaccine Group" },
+          dose_number: 1,
+          valid: true,
+          status: { code: "VALID", name: "Valid Dose" },
+          reasons: [],
+          series: hep_b_series
+        },
+        {
+          event_id: "e2",
+          cvx: "03",
+          administered_on: "2025-01-01",
+          vaccine_group: { code: "500", name: "MMR Vaccine Group" },
+          dose_number: 1,
+          valid: true,
+          status: { code: "VALID", name: "Valid Dose" },
+          reasons: [],
+          series: { code: "MMR_2_DOSE_SERIES", name: "MMR 2-Dose Series", selection: "unambiguous" }
+        }
       ]
     )
   end

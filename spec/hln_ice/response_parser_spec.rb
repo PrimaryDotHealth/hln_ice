@@ -95,14 +95,35 @@ RSpec.describe HlnIce::ResponseParser do
       XML
     end
 
-    def selection(type, series, extra: "")
+    def selection(type, series, doses_remaining: nil, extra: "")
       <<~XML
         <relatedClinicalStatement><observationResult>
           <observationFocus code="#{type}" codeSystem="2.16.840.1.113883.3.795.12.100.501"/>
           <observationValue>
             <concept code="#{series}" codeSystem="2.16.840.1.113883.3.795.12.100.10" displayName="#{series} name"/>
           </observationValue>
+          #{doses_remaining && doses_remaining_statement(doses_remaining)}
           #{extra}
+        </observationResult></relatedClinicalStatement>
+      XML
+    end
+
+    def doses_remaining_statement(value)
+      <<~XML
+        <relatedClinicalStatement><observationResult>
+          <observationFocus code="NUMBER_OF_DOSES_REMAINING" codeSystem="2.16.840.1.113883.3.795.12.100.10"/>
+          <observationValue><text value="#{value}"/></observationValue>
+        </observationResult></relatedClinicalStatement>
+      XML
+    end
+
+    def season_statement(name)
+      <<~XML
+        <relatedClinicalStatement><observationResult>
+          <observationFocus code="SEASON" codeSystem="2.16.840.1.113883.3.795.12.100.11"/>
+          <observationValue>
+            <concept code="SOME_SEASON" codeSystem="2.16.840.1.113883.3.795.12.100.11" displayName="#{name}"/>
+          </observationValue>
         </observationResult></relatedClinicalStatement>
       XML
     end
@@ -119,6 +140,55 @@ RSpec.describe HlnIce::ResponseParser do
 
     def recommendation_for(statements)
       data_for(proposal(statements))[:recommendations].first
+    end
+
+    it "keeps a doses remaining value that is not a plain number as ICE's text" do
+      [
+        "Recurring",
+        "0 doses remaining in series; one or more additional doses may still be recommended"
+      ].each do |value|
+        statements = status_statement + series_statement(selection("SERIES_DISPLAY_UNAMBIGUOUS", "S",
+                                                                   doses_remaining: value))
+
+        expect(recommendation_for(statements)[:doses_remaining]).to eq(value)
+      end
+    end
+
+    it "leaves out season dates it cannot read from the season name" do
+      [
+        "2026-2027 Influenza Season",
+        "Season (07/01/2026 - 06/30/2027) for adults",
+        "Season (02/30/2026 - 06/30/2027)",
+        "Season (07/01/2026 - 13/01/2027)",
+        "Season (7/1/2026 - 6/30/2027)",
+        "Season (2026-07-01 - 2027-06-30)",
+        ""
+      ].each do |name|
+        series = series_statement(selection("SERIES_DISPLAY_UNAMBIGUOUS", "S", extra: season_statement(name)))
+
+        expect(recommendation_for(status_statement + series)[:season]).to eq(
+          code: "SOME_SEASON",
+          name:,
+          starts_on: nil,
+          ends_on: nil
+        )
+      end
+    end
+
+    it "prefers the unambiguous or best-guess series over an alternative, wherever it appears" do
+      selections = selection("SERIES_DISPLAY_ALTERNATIVE", "ALT", doses_remaining: "1") +
+                   selection("SERIES_DISPLAY_BEST_GUESS", "BEST", doses_remaining: "2")
+
+      recommendation = recommendation_for(status_statement + series_statement(selections))
+
+      expect(recommendation[:series]).to eq(code: "BEST", name: "BEST name", selection: "best_guess")
+      expect(recommendation[:doses_remaining]).to eq(2)
+    end
+
+    it "reports an alternative series when it is the only one" do
+      statements = status_statement + series_statement(selection("SERIES_DISPLAY_ALTERNATIVE", "ALT"))
+
+      expect(recommendation_for(statements)[:series]).to eq(code: "ALT", name: "ALT name", selection: "alternative")
     end
 
     it "takes reasons only from the status observation's own interpretations" do
