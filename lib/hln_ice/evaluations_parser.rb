@@ -16,8 +16,8 @@ module HlnIce
       events = patient.xpath("./clinicalStatements/substanceAdministrationEvents/substanceAdministrationEvent")
 
       events.flat_map do |event|
-        event_id = event.xpath("./id").first&.[]("root")
-        cvx = event.xpath("./substance/substanceCode").first&.[]("code")
+        event_id = event.at_xpath("./id")&.[]("root")
+        cvx = event.at_xpath("./substance/substanceCode")&.[]("code")
 
         event.xpath("./relatedClinicalStatement/substanceAdministrationEvent").filter_map do |component|
           parse_evaluation(component, event_id:, cvx:)
@@ -31,19 +31,20 @@ module HlnIce
       # Build the evaluation for one vaccine group from a nested event.
       # Returns nil when the event has no evaluation status observation.
       def parse_evaluation(component, event_id:, cvx:)
-        observation = component.xpath("./relatedClinicalStatement/observationResult[observationValue/concept]").first
-        return unless observation
+        observation = vaccine_group_observation(component)
+        status = observation&.at_xpath("./observationValue/concept")
+        return unless status
 
-        focus = observation.xpath("./observationFocus").first
-        status = observation.xpath("./observationValue/concept").first
-        dose_number = component.xpath("./doseNumber").first&.[]("value")
-        valid = component.xpath("./isValid").first&.[]("value")
+        focus = observation.at_xpath("./observationFocus")
+        dose_number = component.at_xpath("./doseNumber")&.[]("value")
+        valid = component.at_xpath("./isValid")&.[]("value")
+        series = SeriesParser.new(component).series
 
-        {
+        evaluation = {
           event_id:,
           cvx:,
-          administered_on: format_ice_date(component.xpath("./administrationTimeInterval").first&.[]("low")),
-          vaccine_group: { code: focus&.[]("code"), name: focus&.[]("displayName") },
+          administered_on: format_ice_date(component.at_xpath("./administrationTimeInterval")&.[]("low")),
+          vaccine_group: { code: focus["code"], name: focus["displayName"] },
           dose_number: dose_number&.to_i,
           valid: valid.nil? ? nil : valid == "true",
           status: { code: status["code"], name: status["displayName"] },
@@ -51,6 +52,8 @@ module HlnIce
             { code: interpretation["code"], name: interpretation["displayName"] }
           end
         }
+        evaluation[:series] = series if series
+        evaluation
       end
   end
 end

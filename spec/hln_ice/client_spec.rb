@@ -30,6 +30,7 @@ RSpec.describe HlnIce::Client do
                   <proposedAdministrationTimeInterval low="20200301" high="20200401"/>
                   <relatedClinicalStatement>
                     <observationResult>
+                      <observationFocus code="400" codeSystem="2.16.840.1.113883.3.795.12.100.1"/>
                       <observationValue>
                         <concept code="RECOMMENDED" displayName="Recommended"/>
                       </observationValue>

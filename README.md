@@ -6,7 +6,7 @@ Given a patient's demographics and immunization history, `HlnIce` builds the
 VMR (Virtual Medical Record) request, calls the ICE evaluation endpoint, and
 parses the response into:
 
-- a full list of **recommendations** (one per vaccine group, with status, reasons, and administration intervals),
+- a full list of **recommendations** (one per vaccine group, with status, reasons, administration intervals, and, when the ICE server outputs them, schedule authorities, series, season, and doses remaining),
 - the **evaluations** of each administered dose (per vaccine group, with dose number, validity, and reasons), and
 - a **simplified status** map keyed by vaccine group — e.g. `{ ipv_opv: "overdue", mmr: "compliant" }`.
 
@@ -115,7 +115,26 @@ On success:
         schedule_authorities: [
           { code: "ACIP_CDC", name: "Advisory Committee on Immunization Practices / Centers for Disease Control and Prevention" },
           { code: "AAP", name: "American Academy of Pediatrics" }
-        ]
+        ],
+        # Only present when the ICE server has ICE_OUTPUTSERIESINFORMATION enabled.
+        # selection is "unambiguous", "best_guess", or "alternative".
+        series: { code: "...", name: "...", selection: "best_guess" }, # e.g. HEP_B_ADULT_3_DOSE_SERIES
+        # Only present for seasonal vaccines (e.g. influenza, COVID-19) with series output on
+        # starts_on/ends_on are read from the end of ICE's season name, e.g.
+        # "2026-2027 COVID-19 Season (08/28/2026 - 01/01/2100)", because ICE sends
+        # no structured season dates. They are nil if the name is not in that format.
+        # ICE uses an end of 2100-01-01 for an open-ended season. For influenza, ICE
+        # may send a default code and label (e.g. 20152016_INFLUENZA_SEASON) with the
+        # current season's dates; the dates are the ones to rely on.
+        season: {
+          code: "COVID_19_AUG_2026_SEASON",
+          name: "2026-2027 COVID-19 Season (08/28/2026 - 01/01/2100)",
+          starts_on: "2026-08-28",
+          ends_on: "2100-01-01"
+        },
+        # Only present when ICE_OUTPUTNUMBEROFDOSESREMAINING is also enabled. An Integer
+        # for a plain count, otherwise ICE's text, e.g. "Recurring".
+        doses_remaining: 3
       }
     ],
     # One entry per administered dose and vaccine group it counts toward, so a
@@ -129,7 +148,9 @@ On success:
         dose_number: 1, # nil if ICE omits it
         valid: true,
         status: { code: "VALID", name: "Valid Dose" }, # e.g. VALID, INVALID, ACCEPTED
-        reasons: [] # e.g. [{ code: "BELOW_MINIMUM_INTERVAL", name: "Below Minimum Interval" }]
+        reasons: [], # e.g. [{ code: "BELOW_MINIMUM_INTERVAL", name: "Below Minimum Interval" }]
+        # The series the dose was evaluated against. Only present with series output on.
+        series: { code: "...", name: "...", selection: "unambiguous" } # e.g. MMR_2_DOSE_SERIES
       }
     ],
     simplified_status: { ipv_opv: "overdue" }
@@ -144,6 +165,10 @@ On failure (service error, timeout after retries, or unparseable response):
 ```
 
 Always branch on `result[:success]` before reading `result[:data]`.
+
+Optional keys (`intervals`, `schedule_authorities`, `series`, `season`,
+`doses_remaining`) are left out when ICE does not send them, so reading one
+returns `nil`.
 
 ### Simplified status values
 
